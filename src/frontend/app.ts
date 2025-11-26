@@ -1,6 +1,8 @@
 // API Base URL
 const API_BASE: string = 'http://localhost:3000/api';
 
+console.log('[App] app.ts module loaded!');
+
 // Import types (types are removed during compilation, only used for type checking)
 import type { User, Course, Assignment, UserRole, CourseData } from '../types/index.js';
 
@@ -10,10 +12,38 @@ let courses: Course[] = [];
 let enrolledCourses: Course[] = [];
 let assignments: Assignment[] = [];
 
-// Initialize App
-document.addEventListener('DOMContentLoaded', () => {
-    initializeApp();
+// CRITICAL: Set up event listener IMMEDIATELY when module loads
+// This must happen before componentsLoaded event is dispatched
+console.log('[App] Setting up componentsLoaded listener IMMEDIATELY...');
+window.addEventListener('componentsLoaded', () => {
+    console.log('[App] componentsLoaded event received!');
+    // Small delay to ensure DOM is fully ready
+    setTimeout(() => {
+        console.log('[App] Initializing app after delay...');
+        initApp();
+    }, 10);
+});
+
+// Initialize App - Wait for components to load first
+function initApp() {
+    // Verify elements exist before proceeding
+    const homeLink = document.getElementById('homeLink');
+    const homePage = document.getElementById('homePage');
+    
+    if (!homeLink || !homePage) {
+        console.warn('Components not fully loaded yet, retrying...');
+        setTimeout(initApp, 100);
+        return;
+    }
+    
+    console.log('Initializing app...');
+    console.log('Body element:', document.body);
+    console.log('Home link found:', !!homeLink);
+    
+    // Setup event listeners first (using delegation, so it works even if elements aren't ready)
     setupEventListeners();
+    
+    initializeApp();
     loadCourses();
     if (currentUser) {
         updateUIForUser();
@@ -23,83 +53,205 @@ document.addEventListener('DOMContentLoaded', () => {
             loadAdminData();
         }
     }
-});
+}
+
+// Fallback: Check if components are already loaded (e.g., if event was dispatched before listener was set)
+console.log('[App] Checking if components already loaded...');
+setTimeout(() => {
+    const homeLink = document.getElementById('homeLink');
+    const homePage = document.getElementById('homePage');
+    if (homeLink && homePage && !document.body.hasAttribute('data-app-initialized')) {
+        console.log('[App] Components found but event may have been missed, initializing directly...');
+        document.body.setAttribute('data-app-initialized', 'true');
+        initApp();
+    }
+}, 100);
+
+// Fallback: if components are already loaded (e.g., in development)
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+        // Components should load after DOMContentLoaded, so wait a bit
+        setTimeout(() => {
+            if (document.getElementById('homePage') && document.getElementById('homeLink')) {
+                initApp();
+            }
+        }, 200);
+    });
+} else {
+    // DOM already loaded, check if components exist
+    if (document.getElementById('homePage') && document.getElementById('homeLink')) {
+        initApp();
+    } else {
+        // Wait for components
+        window.addEventListener('componentsLoaded', () => {
+            setTimeout(() => {
+                initApp();
+            }, 10);
+        });
+    }
+}
 
 // Initialize App
 function initializeApp(): void {
     showPage('homePage');
 }
 
-// Setup Event Listeners
+// Setup Event Listeners using Event Delegation (more robust)
 function setupEventListeners(): void {
-    // Navigation
-    const homeLink = document.getElementById('homeLink');
-    const coursesLink = document.getElementById('coursesLink');
-    const dashboardLink = document.getElementById('dashboardLink');
-    const adminLink = document.getElementById('adminLink');
-    const loginLink = document.getElementById('loginLink');
-    const logoutLink = document.getElementById('logoutLink');
-    const exploreBtn = document.getElementById('exploreBtn');
-
-    homeLink?.addEventListener('click', () => showPage('homePage'));
-    coursesLink?.addEventListener('click', () => {
-        showPage('coursesPage');
-        loadCourses();
-    });
-    dashboardLink?.addEventListener('click', () => {
-        if (currentUser?.role === 'student') {
-            showPage('studentDashboard');
-            loadStudentData();
+    console.log('[App] Setting up event listeners with delegation...');
+    console.log('[App] Body element exists:', !!document.body);
+    
+    // Ensure body exists before adding listener
+    if (!document.body) {
+        console.error('[App] Body element not found, retrying...');
+        setTimeout(setupEventListeners, 50);
+        return;
+    }
+    
+    console.log('[App] Body found, adding click event listener...');
+    
+    // Test: Add a simple click handler first to verify it works
+    document.body.addEventListener('click', (e: Event) => {
+        console.log('[App] Click detected anywhere on body!', e.target);
+    }, { once: true });
+    
+    // Use event delegation on document body to catch all clicks
+    document.body.addEventListener('click', (e: Event) => {
+        const target = e.target as HTMLElement;
+        console.log('[App] Click event - target:', target, 'tagName:', target.tagName, 'id:', target.id);
+        
+        // Check if clicked element or its parent is a link/button with an ID
+        let clickedElement: HTMLElement | null = target;
+        let elementId: string | null = null;
+        
+        // Try to find the element with an ID (could be the clicked element or its parent)
+        while (clickedElement && clickedElement !== document.body) {
+            if (clickedElement.id) {
+                elementId = clickedElement.id;
+                console.log('[App] Found element ID:', elementId);
+                break;
+            }
+            clickedElement = clickedElement.parentElement;
+        }
+        
+        if (!elementId) {
+            console.log('[App] No element ID found for click');
+            return;
+        }
+        
+        // Prevent default for navigation links
+        if (target.tagName === 'A' || target.closest('a')) {
+            const link = target.closest('a') as HTMLAnchorElement;
+            if (link && (link.getAttribute('href') === '#' || link.href.endsWith('#'))) {
+                e.preventDefault();
+            }
+        }
+        
+        // Handle navigation clicks
+        console.log('[App] Click detected on element with ID:', elementId);
+        switch (elementId) {
+            case 'homeLink':
+                console.log('[App] Home link clicked');
+                e.preventDefault();
+                showPage('homePage');
+                break;
+            case 'coursesLink':
+                console.log('[App] Courses link clicked');
+                e.preventDefault();
+                showPage('coursesPage');
+                loadCourses();
+                break;
+            case 'dashboardLink':
+                console.log('[App] Dashboard link clicked');
+                e.preventDefault();
+                if (currentUser?.role === 'student') {
+                    showPage('studentDashboard');
+                    loadStudentData();
+                }
+                break;
+            case 'adminLink':
+                console.log('[App] Admin link clicked');
+                e.preventDefault();
+                if (currentUser?.role === 'admin') {
+                    showPage('adminDashboard');
+                    loadAdminData();
+                }
+                break;
+            case 'loginLink':
+                console.log('[App] Login link clicked');
+                e.preventDefault();
+                openAuthModal();
+                break;
+            case 'logoutLink':
+                console.log('[App] Logout link clicked');
+                e.preventDefault();
+                logout();
+                break;
+            case 'exploreBtn':
+                console.log('[App] Explore button clicked');
+                e.preventDefault();
+                showPage('coursesPage');
+                loadCourses();
+                break;
+            default:
+                // Log all clicks for debugging
+                if (elementId) {
+                    console.log('[App] Click on element:', elementId, 'but no handler');
+                }
         }
     });
-    adminLink?.addEventListener('click', () => {
-        if (currentUser?.role === 'admin') {
-            showPage('adminDashboard');
-            loadAdminData();
+
+    // Auth Modal - using event delegation
+    document.body.addEventListener('click', (e: Event) => {
+        const target = e.target as HTMLElement;
+        if (target.id === 'loginTab') {
+            e.preventDefault();
+            switchAuthTab('login');
+        } else if (target.id === 'registerTab') {
+            e.preventDefault();
+            switchAuthTab('register');
         }
     });
-    loginLink?.addEventListener('click', () => openAuthModal());
-    logoutLink?.addEventListener('click', logout);
-    exploreBtn?.addEventListener('click', () => {
-        showPage('coursesPage');
-        loadCourses();
-    });
+    
+    // Form submissions - need to wait for forms to exist
+    setTimeout(() => {
+        const loginForm = document.getElementById('loginForm') as HTMLFormElement;
+        const registerForm = document.getElementById('registerForm') as HTMLFormElement;
+        loginForm?.addEventListener('submit', handleLogin);
+        registerForm?.addEventListener('submit', handleRegister);
+    }, 100);
 
-    // Auth Modal
-    const loginTab = document.getElementById('loginTab');
-    const registerTab = document.getElementById('registerTab');
-    const loginForm = document.getElementById('loginForm') as HTMLFormElement;
-    const registerForm = document.getElementById('registerForm') as HTMLFormElement;
-
-    loginTab?.addEventListener('click', () => switchAuthTab('login'));
-    registerTab?.addEventListener('click', () => switchAuthTab('register'));
-    loginForm?.addEventListener('submit', handleLogin);
-    registerForm?.addEventListener('submit', handleRegister);
-
-    // Close modals
-    document.querySelectorAll('.close').forEach(closeBtn => {
-        closeBtn.addEventListener('click', (e: Event) => {
-            const target = e.target as HTMLElement;
+    // Close modals - using event delegation
+    document.body.addEventListener('click', (e: Event) => {
+        const target = e.target as HTMLElement;
+        if (target.classList.contains('close')) {
+            e.preventDefault();
             const modal = target.closest('.modal') as HTMLElement;
             if (modal) closeModal(modal.id);
-        });
+        }
     });
 
-    // Course Management
-    const addCourseBtn = document.getElementById('addCourseBtn');
-    const courseForm = document.getElementById('courseForm') as HTMLFormElement;
-    addCourseBtn?.addEventListener('click', () => openCourseModal());
-    courseForm?.addEventListener('submit', handleCourseSubmit);
+    // Course Management - wait for elements
+    setTimeout(() => {
+        const addCourseBtn = document.getElementById('addCourseBtn');
+        const courseForm = document.getElementById('courseForm') as HTMLFormElement;
+        addCourseBtn?.addEventListener('click', () => openCourseModal());
+        courseForm?.addEventListener('submit', handleCourseSubmit);
+    }, 100);
 
-    // Search and Filter
-    const searchInput = document.getElementById('searchInput');
-    const categoryFilter = document.getElementById('categoryFilter');
-    searchInput?.addEventListener('input', filterCourses);
-    categoryFilter?.addEventListener('change', filterCourses);
+    // Search and Filter - wait for elements
+    setTimeout(() => {
+        const searchInput = document.getElementById('searchInput');
+        const categoryFilter = document.getElementById('categoryFilter');
+        searchInput?.addEventListener('input', filterCourses);
+        categoryFilter?.addEventListener('change', filterCourses);
+    }, 100);
 
-    // Assignment Form
-    const assignmentForm = document.getElementById('assignmentForm') as HTMLFormElement;
-    assignmentForm?.addEventListener('submit', handleAssignmentSubmit);
+    // Assignment Form - wait for elements
+    setTimeout(() => {
+        const assignmentForm = document.getElementById('assignmentForm') as HTMLFormElement;
+        assignmentForm?.addEventListener('submit', handleAssignmentSubmit);
+    }, 100);
 }
 
 // Page Navigation

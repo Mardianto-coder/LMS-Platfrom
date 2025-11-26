@@ -1,0 +1,32 @@
+<!-- Course Detail Modal -->
+<div id="courseDetailModal" class="modal">
+    <div class="modal-content large">
+        <span class="close">&times;</span>
+        <div id="courseDetailContent">
+            <!-- Course details will be loaded here -->
+        </div>
+    </div>
+</div>
+
+<!-- Assignment Modal -->
+<div id="assignmentModal" class="modal">
+    <div class="modal-content">
+        <span class="close">&times;</span>
+        <h2>Submit Assignment</h2>
+        <form id="assignmentForm">
+            <input type="hidden" id="assignmentCourseId">
+            <input type="hidden" id="assignmentId">
+            <div class="form-group">
+                <label>Assignment Title</label>
+                <input type="text" id="assignmentTitle" required>
+            </div>
+            <div class="form-group">
+                <label>Submission</label>
+                <textarea id="assignmentContent" rows="6" required></textarea>
+            </div>
+            <div id="assignmentStatus" class="status-info"></div>
+            <button type="submit" class="btn btn-primary" id="submitAssignmentBtn">Submit</button>
+        </form>
+    </div>
+</div>
+
