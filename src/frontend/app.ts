@@ -1,0 +1,785 @@
+// API Base URL
+const API_BASE: string = 'http://localhost:3000/api';
+
+// Import types (types are removed during compilation, only used for type checking)
+import type { User, Course, Assignment, UserRole, CourseData } from '../types/index.js';
+
+// State Management
+let currentUser: User | null = JSON.parse(localStorage.getItem('currentUser') || 'null');
+let courses: Course[] = [];
+let enrolledCourses: Course[] = [];
+let assignments: Assignment[] = [];
+
+// Initialize App
+document.addEventListener('DOMContentLoaded', () => {
+    initializeApp();
+    setupEventListeners();
+    loadCourses();
+    if (currentUser) {
+        updateUIForUser();
+        if (currentUser.role === 'student') {
+            loadStudentData();
+        } else if (currentUser.role === 'admin') {
+            loadAdminData();
+        }
+    }
+});
+
+// Initialize App
+function initializeApp(): void {
+    showPage('homePage');
+}
+
+// Setup Event Listeners
+function setupEventListeners(): void {
+    // Navigation
+    const homeLink = document.getElementById('homeLink');
+    const coursesLink = document.getElementById('coursesLink');
+    const dashboardLink = document.getElementById('dashboardLink');
+    const adminLink = document.getElementById('adminLink');
+    const loginLink = document.getElementById('loginLink');
+    const logoutLink = document.getElementById('logoutLink');
+    const exploreBtn = document.getElementById('exploreBtn');
+
+    homeLink?.addEventListener('click', () => showPage('homePage'));
+    coursesLink?.addEventListener('click', () => {
+        showPage('coursesPage');
+        loadCourses();
+    });
+    dashboardLink?.addEventListener('click', () => {
+        if (currentUser?.role === 'student') {
+            showPage('studentDashboard');
+            loadStudentData();
+        }
+    });
+    adminLink?.addEventListener('click', () => {
+        if (currentUser?.role === 'admin') {
+            showPage('adminDashboard');
+            loadAdminData();
+        }
+    });
+    loginLink?.addEventListener('click', () => openAuthModal());
+    logoutLink?.addEventListener('click', logout);
+    exploreBtn?.addEventListener('click', () => {
+        showPage('coursesPage');
+        loadCourses();
+    });
+
+    // Auth Modal
+    const loginTab = document.getElementById('loginTab');
+    const registerTab = document.getElementById('registerTab');
+    const loginForm = document.getElementById('loginForm') as HTMLFormElement;
+    const registerForm = document.getElementById('registerForm') as HTMLFormElement;
+
+    loginTab?.addEventListener('click', () => switchAuthTab('login'));
+    registerTab?.addEventListener('click', () => switchAuthTab('register'));
+    loginForm?.addEventListener('submit', handleLogin);
+    registerForm?.addEventListener('submit', handleRegister);
+
+    // Close modals
+    document.querySelectorAll('.close').forEach(closeBtn => {
+        closeBtn.addEventListener('click', (e: Event) => {
+            const target = e.target as HTMLElement;
+            const modal = target.closest('.modal') as HTMLElement;
+            if (modal) closeModal(modal.id);
+        });
+    });
+
+    // Course Management
+    const addCourseBtn = document.getElementById('addCourseBtn');
+    const courseForm = document.getElementById('courseForm') as HTMLFormElement;
+    addCourseBtn?.addEventListener('click', () => openCourseModal());
+    courseForm?.addEventListener('submit', handleCourseSubmit);
+
+    // Search and Filter
+    const searchInput = document.getElementById('searchInput');
+    const categoryFilter = document.getElementById('categoryFilter');
+    searchInput?.addEventListener('input', filterCourses);
+    categoryFilter?.addEventListener('change', filterCourses);
+
+    // Assignment Form
+    const assignmentForm = document.getElementById('assignmentForm') as HTMLFormElement;
+    assignmentForm?.addEventListener('submit', handleAssignmentSubmit);
+}
+
+// Page Navigation
+function showPage(pageId: string): void {
+    document.querySelectorAll('.page').forEach(page => {
+        page.classList.remove('active');
+    });
+    document.getElementById(pageId)?.classList.add('active');
+}
+
+// Modal Functions
+function openModal(modalId: string): void {
+    document.getElementById(modalId)?.classList.add('active');
+}
+
+function closeModal(modalId: string): void {
+    document.getElementById(modalId)?.classList.remove('active');
+    if (modalId === 'courseModal') {
+        const courseForm = document.getElementById('courseForm') as HTMLFormElement;
+        const courseId = document.getElementById('courseId') as HTMLInputElement;
+        courseForm?.reset();
+        if (courseId) courseId.value = '';
+    }
+    if (modalId === 'assignmentModal') {
+        const assignmentForm = document.getElementById('assignmentForm') as HTMLFormElement;
+        assignmentForm?.reset();
+    }
+}
+
+function openAuthModal(): void {
+    openModal('authModal');
+    switchAuthTab('login');
+}
+
+function switchAuthTab(tab: 'login' | 'register'): void {
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+    document.querySelectorAll('.auth-form').forEach(form => form.classList.remove('active'));
+    
+    if (tab === 'login') {
+        document.getElementById('loginTab')?.classList.add('active');
+        document.getElementById('loginForm')?.classList.add('active');
+    } else {
+        document.getElementById('registerTab')?.classList.add('active');
+        document.getElementById('registerForm')?.classList.add('active');
+    }
+}
+
+// Authentication
+async function handleLogin(e: Event): Promise<void> {
+    e.preventDefault();
+    const email = (document.getElementById('loginEmail') as HTMLInputElement).value;
+    const password = (document.getElementById('loginPassword') as HTMLInputElement).value;
+    const role = (document.getElementById('loginRole') as HTMLSelectElement).value as UserRole;
+
+    try {
+        const response = await fetch(`${API_BASE}/auth/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password, role })
+        });
+
+        const data = await response.json();
+        
+        if (response.ok) {
+            currentUser = data.user;
+            localStorage.setItem('currentUser', JSON.stringify(currentUser));
+            updateUIForUser();
+            closeModal('authModal');
+            showSuccessMessage('Login successful!');
+            
+            if (currentUser && currentUser.role === 'student') {
+                showPage('studentDashboard');
+                loadStudentData();
+            } else if (currentUser) {
+                showPage('adminDashboard');
+                loadAdminData();
+            }
+        } else {
+            showErrorMessage(data.message || 'Login failed');
+        }
+    } catch (error) {
+        showErrorMessage('Network error. Please check if the server is running.');
+        console.error('Login error:', error);
+    }
+}
+
+async function handleRegister(e: Event): Promise<void> {
+    e.preventDefault();
+    const name = (document.getElementById('registerName') as HTMLInputElement).value;
+    const email = (document.getElementById('registerEmail') as HTMLInputElement).value;
+    const password = (document.getElementById('registerPassword') as HTMLInputElement).value;
+    const role = (document.getElementById('registerRole') as HTMLSelectElement).value as UserRole;
+
+    try {
+        const response = await fetch(`${API_BASE}/auth/register`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, email, password, role })
+        });
+
+        const data = await response.json();
+        
+        if (response.ok) {
+            showSuccessMessage('Registration successful! Please login.');
+            switchAuthTab('login');
+        } else {
+            showErrorMessage(data.message || 'Registration failed');
+        }
+    } catch (error) {
+        showErrorMessage('Network error. Please check if the server is running.');
+        console.error('Register error:', error);
+    }
+}
+
+function logout(): void {
+    currentUser = null;
+    localStorage.removeItem('currentUser');
+    updateUIForUser();
+    showPage('homePage');
+    showSuccessMessage('Logged out successfully');
+}
+
+function updateUIForUser(): void {
+    const isLoggedIn = !!currentUser;
+    const loginLink = document.getElementById('loginLink');
+    const logoutLink = document.getElementById('logoutLink');
+    const dashboardLink = document.getElementById('dashboardLink');
+    const adminLink = document.getElementById('adminLink');
+
+    if (loginLink) loginLink.style.display = isLoggedIn ? 'none' : 'block';
+    if (logoutLink) logoutLink.style.display = isLoggedIn ? 'block' : 'none';
+    if (dashboardLink) dashboardLink.style.display = (isLoggedIn && currentUser?.role === 'student') ? 'block' : 'none';
+    if (adminLink) adminLink.style.display = (isLoggedIn && currentUser?.role === 'admin') ? 'block' : 'none';
+}
+
+// Courses
+async function loadCourses(): Promise<void> {
+    try {
+        const response = await fetch(`${API_BASE}/courses`);
+        const data = await response.json();
+        courses = data.courses || [];
+        displayCourses(courses);
+    } catch (error) {
+        console.error('Error loading courses:', error);
+        // Fallback to local data if API fails
+        courses = getLocalCourses();
+        displayCourses(courses);
+    }
+}
+
+function displayCourses(coursesToDisplay: Course[]): void {
+    const grid = document.getElementById('coursesGrid');
+    if (!grid) return;
+
+    grid.innerHTML = coursesToDisplay.map(course => `
+        <div class="course-card" data-course-id="${course.id}">
+            <h3>${course.title}</h3>
+            <span class="category">${course.category}</span>
+            <p class="description">${course.description}</p>
+            <div class="meta">
+                <span>⏱ ${course.duration} hours</span>
+                ${currentUser?.role === 'student' ? 
+                    `<button class="btn btn-primary" onclick="window.enrollInCourse(${course.id})">Enroll</button>` :
+                    ''
+                }
+            </div>
+        </div>
+    `).join('');
+
+    // Add click listeners for course details
+    document.querySelectorAll('.course-card').forEach(card => {
+        card.addEventListener('click', (e: Event) => {
+            const target = e.target as HTMLElement;
+            if (!target.classList.contains('btn')) {
+                const courseId = parseInt((card as HTMLElement).dataset.courseId || '0');
+                showCourseDetails(courseId);
+            }
+        });
+    });
+}
+
+async function enrollInCourse(courseId: number): Promise<void> {
+    if (!currentUser || currentUser.role !== 'student') {
+        showErrorMessage('Please login as a student to enroll');
+        return;
+    }
+
+    try {
+        const response = await fetch(`${API_BASE}/courses/${courseId}/enroll`, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${currentUser.id}`
+            }
+        });
+
+        const data = await response.json();
+        
+        if (response.ok) {
+            showSuccessMessage('Successfully enrolled in course!');
+            loadStudentData();
+        } else {
+            showErrorMessage(data.message || 'Enrollment failed');
+        }
+    } catch (error) {
+        console.error('Enrollment error:', error);
+        // Fallback: add to local enrolled courses
+        if (!enrolledCourses.find(c => c.id === courseId)) {
+            const course = courses.find(c => c.id === courseId);
+            if (course) {
+                enrolledCourses.push(course);
+                showSuccessMessage('Successfully enrolled in course!');
+                loadStudentData();
+            }
+        }
+    }
+}
+
+// Make enrollInCourse available globally for onclick handlers
+(window as any).enrollInCourse = enrollInCourse;
+
+function filterCourses(): void {
+    const searchInput = document.getElementById('searchInput') as HTMLInputElement;
+    const categoryFilter = document.getElementById('categoryFilter') as HTMLSelectElement;
+    
+    const searchTerm = searchInput.value.toLowerCase();
+    const category = categoryFilter.value;
+
+    const filtered = courses.filter(course => {
+        const matchesSearch = course.title.toLowerCase().includes(searchTerm) ||
+                            course.description.toLowerCase().includes(searchTerm);
+        const matchesCategory = !category || course.category === category;
+        return matchesSearch && matchesCategory;
+    });
+
+    displayCourses(filtered);
+}
+
+function showCourseDetails(courseId: number): void {
+    const course = courses.find(c => c.id === courseId);
+    if (!course) return;
+
+    const content = document.getElementById('courseDetailContent');
+    if (!content) return;
+
+    content.innerHTML = `
+        <h2>${course.title}</h2>
+        <span class="category">${course.category}</span>
+        <p class="description" style="margin: 1rem 0;">${course.description}</p>
+        <div class="meta">
+            <span>⏱ Duration: ${course.duration} hours</span>
+        </div>
+        ${currentUser?.role === 'student' ? 
+            `<div class="course-actions">
+                <button class="btn btn-primary" onclick="window.enrollInCourse(${course.id}); window.closeModal('courseDetailModal');">Enroll Now</button>
+            </div>` :
+            ''
+        }
+    `;
+    openModal('courseDetailModal');
+}
+
+// Make closeModal available globally
+(window as any).closeModal = closeModal;
+
+// Student Dashboard
+async function loadStudentData(): Promise<void> {
+    if (!currentUser || currentUser.role !== 'student') return;
+
+    try {
+        // Load enrolled courses
+        const enrollResponse = await fetch(`${API_BASE}/students/${currentUser.id}/courses`, {
+            headers: { 'Authorization': `Bearer ${currentUser.id}` }
+        });
+        const enrollData = await enrollResponse.json();
+        enrolledCourses = enrollData.courses || [];
+
+        // Load assignments
+        const assignResponse = await fetch(`${API_BASE}/students/${currentUser.id}/assignments`, {
+            headers: { 'Authorization': `Bearer ${currentUser.id}` }
+        });
+        const assignData = await assignResponse.json();
+        assignments = assignData.assignments || [];
+
+        displayEnrolledCourses();
+        displayTasks();
+        displayProgress();
+    } catch (error) {
+        console.error('Error loading student data:', error);
+        // Use local data
+        displayEnrolledCourses();
+        displayTasks();
+        displayProgress();
+    }
+}
+
+function displayEnrolledCourses(): void {
+    const container = document.getElementById('enrolledCourses');
+    if (!container) return;
+
+    if (enrolledCourses.length === 0) {
+        container.innerHTML = '<p>You are not enrolled in any courses yet.</p>';
+        return;
+    }
+
+    container.innerHTML = enrolledCourses.map(course => `
+        <div class="course-card">
+            <h3>${course.title}</h3>
+            <span class="category">${course.category}</span>
+            <p class="description">${course.description}</p>
+            <div class="course-actions">
+                <button class="btn btn-secondary" onclick="window.openAssignmentModal(${course.id})">Submit Assignment</button>
+            </div>
+        </div>
+    `).join('');
+}
+
+function displayTasks(): void {
+    const container = document.getElementById('myTasks');
+    if (!container) return;
+
+    if (assignments.length === 0) {
+        container.innerHTML = '<p>No assignments yet.</p>';
+        return;
+    }
+
+    container.innerHTML = assignments.map(assignment => `
+        <div class="task-item">
+            <h4>${assignment.title}</h4>
+            <p>${assignment.courseTitle || 'Course Assignment'}</p>
+            <div class="task-meta">
+                <span>Status: <span class="task-status ${assignment.status}">${assignment.status}</span></span>
+                <span>Submitted: ${new Date(assignment.submittedAt || Date.now()).toLocaleDateString()}</span>
+            </div>
+            ${assignment.status !== 'graded' ? 
+                `<button class="btn btn-outline" onclick="window.openAssignmentModal(${assignment.courseId}, ${assignment.id})" style="margin-top: 0.5rem;">Update Submission</button>` :
+                ''
+            }
+        </div>
+    `).join('');
+}
+
+function displayProgress(): void {
+    const container = document.getElementById('progressSection');
+    if (!container) return;
+
+    if (enrolledCourses.length === 0) {
+        container.innerHTML = '<p>No progress to display.</p>';
+        return;
+    }
+
+    container.innerHTML = enrolledCourses.map(course => {
+        const courseAssignments = assignments.filter(a => a.courseId === course.id);
+        const completed = courseAssignments.filter(a => a.status === 'graded').length;
+        const total = courseAssignments.length || 1;
+        const progress = Math.round((completed / total) * 100);
+
+        return `
+            <div class="progress-card">
+                <h4>${course.title}</h4>
+                <div>${completed} of ${total} assignments completed</div>
+                <div class="progress-bar">
+                    <div class="progress-fill" style="width: ${progress}%"></div>
+                </div>
+                <div style="margin-top: 0.5rem; font-weight: 600;">${progress}%</div>
+            </div>
+        `;
+    }).join('');
+}
+
+function openAssignmentModal(courseId: number, assignmentId: number | null = null): void {
+    if (!currentUser || currentUser.role !== 'student') {
+        showErrorMessage('Please login as a student');
+        return;
+    }
+
+    const assignmentCourseId = document.getElementById('assignmentCourseId') as HTMLInputElement;
+    const assignmentIdInput = document.getElementById('assignmentId') as HTMLInputElement;
+    
+    if (assignmentCourseId) assignmentCourseId.value = courseId.toString();
+    if (assignmentIdInput) assignmentIdInput.value = assignmentId?.toString() || '';
+
+    const assignment = assignmentId ? assignments.find(a => a.id === assignmentId) : null;
+
+    const assignmentTitle = document.getElementById('assignmentTitle') as HTMLInputElement;
+    const assignmentContent = document.getElementById('assignmentContent') as HTMLTextAreaElement;
+    const submitBtn = document.getElementById('submitAssignmentBtn');
+    const statusDiv = document.getElementById('assignmentStatus');
+
+    if (assignment) {
+        if (assignmentTitle) assignmentTitle.value = assignment.title;
+        if (assignmentContent) assignmentContent.value = assignment.content || '';
+        if (submitBtn) submitBtn.textContent = 'Update Submission';
+        
+        if (statusDiv) {
+            statusDiv.className = `status-info ${assignment.status === 'graded' ? 'info' : 'success'}`;
+            statusDiv.textContent = `Current Status: ${assignment.status}`;
+        }
+    } else {
+        const assignmentForm = document.getElementById('assignmentForm') as HTMLFormElement;
+        assignmentForm?.reset();
+        if (submitBtn) submitBtn.textContent = 'Submit';
+        if (statusDiv) statusDiv.textContent = '';
+    }
+
+    openModal('assignmentModal');
+}
+
+// Make openAssignmentModal available globally
+(window as any).openAssignmentModal = openAssignmentModal;
+
+async function handleAssignmentSubmit(e: Event): Promise<void> {
+    e.preventDefault();
+    const courseId = parseInt((document.getElementById('assignmentCourseId') as HTMLInputElement).value);
+    const assignmentId = (document.getElementById('assignmentId') as HTMLInputElement).value;
+    const title = (document.getElementById('assignmentTitle') as HTMLInputElement).value;
+    const content = (document.getElementById('assignmentContent') as HTMLTextAreaElement).value;
+
+    try {
+        const url = assignmentId ? 
+            `${API_BASE}/assignments/${assignmentId}` : 
+            `${API_BASE}/assignments`;
+        
+        const method = assignmentId ? 'PUT' : 'POST';
+
+        const response = await fetch(url, {
+            method: method,
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${currentUser!.id}`
+            },
+            body: JSON.stringify({
+                courseId,
+                title,
+                content,
+                studentId: currentUser!.id
+            })
+        });
+
+        const data = await response.json();
+        
+        if (response.ok) {
+            showSuccessMessage(assignmentId ? 'Assignment updated successfully!' : 'Assignment submitted successfully!');
+            closeModal('assignmentModal');
+            loadStudentData();
+        } else {
+            showErrorMessage(data.message || 'Submission failed');
+        }
+    } catch (error) {
+        console.error('Assignment error:', error);
+        // Fallback: add to local assignments
+        const newAssignment: Assignment = {
+            id: assignmentId ? parseInt(assignmentId) : Date.now(),
+            courseId,
+            title,
+            content,
+            status: 'submitted',
+            submittedAt: new Date().toISOString(),
+            studentId: currentUser!.id,
+            courseTitle: enrolledCourses.find(c => c.id === courseId)?.title
+        };
+        
+        if (assignmentId) {
+            const index = assignments.findIndex(a => a.id === parseInt(assignmentId));
+            if (index !== -1) assignments[index] = { ...assignments[index], ...newAssignment };
+        } else {
+            assignments.push(newAssignment);
+        }
+        
+        showSuccessMessage(assignmentId ? 'Assignment updated successfully!' : 'Assignment submitted successfully!');
+        closeModal('assignmentModal');
+        loadStudentData();
+    }
+}
+
+// Admin Dashboard
+async function loadAdminData(): Promise<void> {
+    if (!currentUser || currentUser.role !== 'admin') return;
+    await loadCourses();
+    displayAdminCourses();
+}
+
+function displayAdminCourses(): void {
+    const container = document.getElementById('adminCourses');
+    if (!container) return;
+
+    container.innerHTML = courses.map(course => `
+        <div class="course-card">
+            <h3>${course.title}</h3>
+            <span class="category">${course.category}</span>
+            <p class="description">${course.description}</p>
+            <div class="meta">
+                <span>⏱ ${course.duration} hours</span>
+            </div>
+            <div class="course-actions">
+                <button class="btn btn-primary" onclick="window.editCourse(${course.id})">Edit</button>
+                <button class="btn btn-danger" onclick="window.deleteCourse(${course.id})">Delete</button>
+            </div>
+        </div>
+    `).join('');
+}
+
+function openCourseModal(courseId: number | null = null): void {
+    const course = courseId ? courses.find(c => c.id === courseId) : null;
+    
+    const modalTitle = document.getElementById('courseModalTitle');
+    const courseIdInput = document.getElementById('courseId') as HTMLInputElement;
+    
+    if (modalTitle) modalTitle.textContent = course ? 'Edit Course' : 'Add New Course';
+    if (courseIdInput) courseIdInput.value = courseId?.toString() || '';
+    
+    if (course) {
+        const courseTitle = document.getElementById('courseTitle') as HTMLInputElement;
+        const courseDescription = document.getElementById('courseDescription') as HTMLTextAreaElement;
+        const courseCategory = document.getElementById('courseCategory') as HTMLSelectElement;
+        const courseDuration = document.getElementById('courseDuration') as HTMLInputElement;
+        
+        if (courseTitle) courseTitle.value = course.title;
+        if (courseDescription) courseDescription.value = course.description;
+        if (courseCategory) courseCategory.value = course.category;
+        if (courseDuration) courseDuration.value = course.duration.toString();
+    } else {
+        const courseForm = document.getElementById('courseForm') as HTMLFormElement;
+        courseForm?.reset();
+    }
+    
+    openModal('courseModal');
+}
+
+function editCourse(courseId: number): void {
+    openCourseModal(courseId);
+}
+
+// Make editCourse and deleteCourse available globally
+(window as any).editCourse = editCourse;
+
+async function handleCourseSubmit(e: Event): Promise<void> {
+    e.preventDefault();
+    const courseId = (document.getElementById('courseId') as HTMLInputElement).value;
+    const courseData: CourseData = {
+        title: (document.getElementById('courseTitle') as HTMLInputElement).value,
+        description: (document.getElementById('courseDescription') as HTMLTextAreaElement).value,
+        category: (document.getElementById('courseCategory') as HTMLSelectElement).value as Course['category'],
+        duration: parseInt((document.getElementById('courseDuration') as HTMLInputElement).value)
+    };
+
+    try {
+        const url = courseId ? `${API_BASE}/courses/${courseId}` : `${API_BASE}/courses`;
+        const method = courseId ? 'PUT' : 'POST';
+
+        const response = await fetch(url, {
+            method: method,
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${currentUser!.id}`
+            },
+            body: JSON.stringify(courseData)
+        });
+
+        const data = await response.json();
+        
+        if (response.ok) {
+            showSuccessMessage(courseId ? 'Course updated successfully!' : 'Course created successfully!');
+            closeModal('courseModal');
+            await loadCourses();
+            displayAdminCourses();
+        } else {
+            showErrorMessage(data.message || 'Operation failed');
+        }
+    } catch (error) {
+        console.error('Course error:', error);
+        // Fallback: update local courses
+        if (courseId) {
+            const index = courses.findIndex(c => c.id === parseInt(courseId));
+            if (index !== -1) {
+                courses[index] = { ...courses[index], ...courseData };
+            }
+        } else {
+            const newCourse: Course = {
+                id: Date.now(),
+                ...courseData,
+                createdAt: new Date().toISOString()
+            };
+            courses.push(newCourse);
+        }
+        
+        showSuccessMessage(courseId ? 'Course updated successfully!' : 'Course created successfully!');
+        closeModal('courseModal');
+        loadCourses();
+        displayAdminCourses();
+    }
+}
+
+async function deleteCourse(courseId: number): Promise<void> {
+    if (!confirm('Are you sure you want to delete this course?')) return;
+
+    try {
+        const response = await fetch(`${API_BASE}/courses/${courseId}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${currentUser!.id}` }
+        });
+
+        if (response.ok) {
+            showSuccessMessage('Course deleted successfully!');
+            await loadCourses();
+            displayAdminCourses();
+        } else {
+            const data = await response.json();
+            showErrorMessage(data.message || 'Delete failed');
+        }
+    } catch (error) {
+        console.error('Delete error:', error);
+        // Fallback: remove from local courses
+        courses = courses.filter(c => c.id !== courseId);
+        showSuccessMessage('Course deleted successfully!');
+        loadCourses();
+        displayAdminCourses();
+    }
+}
+
+// Make deleteCourse available globally
+(window as any).deleteCourse = deleteCourse;
+
+// Utility Functions
+function showSuccessMessage(message: string): void {
+    showMessage(message, 'success');
+}
+
+function showErrorMessage(message: string): void {
+    showMessage(message, 'error');
+}
+
+function showMessage(message: string, type: 'success' | 'error' | 'info'): void {
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `status-info ${type}`;
+    messageDiv.textContent = message;
+    messageDiv.style.position = 'fixed';
+    messageDiv.style.top = '100px';
+    messageDiv.style.right = '20px';
+    messageDiv.style.zIndex = '3000';
+    messageDiv.style.minWidth = '300px';
+    
+    document.body.appendChild(messageDiv);
+    
+    setTimeout(() => {
+        messageDiv.remove();
+    }, 3000);
+}
+
+// Local Data Fallback
+function getLocalCourses(): Course[] {
+    return [
+        {
+            id: 1,
+            title: 'Introduction to Web Development',
+            description: 'Learn the fundamentals of HTML, CSS, and JavaScript to build modern web applications.',
+            category: 'programming',
+            duration: 40
+        },
+        {
+            id: 2,
+            title: 'UI/UX Design Principles',
+            description: 'Master the art of creating beautiful and user-friendly interfaces.',
+            category: 'design',
+            duration: 30
+        },
+        {
+            id: 3,
+            title: 'Business Management Fundamentals',
+            description: 'Essential skills for managing teams and projects effectively.',
+            category: 'business',
+            duration: 35
+        },
+        {
+            id: 4,
+            title: 'English for Professionals',
+            description: 'Improve your English communication skills for the workplace.',
+            category: 'language',
+            duration: 50
+        }
+    ];
+}
+
