@@ -1,10 +1,29 @@
-// API Base URL
-const API_BASE: string = 'http://localhost:3000/api';
+// API Base URL (tidak digunakan lagi, semua menggunakan fungsi dari api.ts)
+// const API_BASE: string = 'http://localhost:3000/api';
 
 console.log('[App] app.ts module loaded!');
 
 // Import types (types are removed during compilation, only used for type checking)
 import type { User, Course, Assignment, UserRole, CourseData } from '../types/index.js';
+
+// ============================================
+// IMPORT FUNGSI API
+// ============================================
+import {
+    loginUser,
+    registerUser,
+    saveCurrentUser,
+    clearCurrentUser,
+    getAllCourses,
+    enrollMeInCourse,
+    getMyCourses,
+    getMyAssignments,
+    submitAssignment,
+    updateAssignment,
+    createCourse,
+    updateCourse,
+    deleteCourse as apiDeleteCourse
+} from './api.js';
 
 // State Management
 let currentUser: User | null = JSON.parse(localStorage.getItem('currentUser') || 'null');
@@ -93,7 +112,19 @@ if (document.readyState === 'loading') {
 
 // Initialize App
 function initializeApp(): void {
-    showPage('homePage');
+    // Jika user sudah login, redirect ke halaman yang sesuai
+    if (currentUser) {
+        if (currentUser.role === 'student') {
+            showPage('studentDashboard');
+        } else if (currentUser.role === 'admin') {
+            showPage('adminDashboard');
+        } else {
+            showPage('homePage');
+        }
+    } else {
+        // Jika belum login, tampilkan home page
+        showPage('homePage');
+    }
 }
 
 // Setup Event Listeners using Event Delegation (more robust)
@@ -307,33 +338,26 @@ async function handleLogin(e: Event): Promise<void> {
     const role = (document.getElementById('loginRole') as HTMLSelectElement).value as UserRole;
 
     try {
-        const response = await fetch(`${API_BASE}/auth/login`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email, password, role })
-        });
-
-        const data = await response.json();
+        // Menggunakan fungsi dari api.ts
+        const user = await loginUser(email, password, role);
         
-        if (response.ok) {
-            currentUser = data.user;
-            localStorage.setItem('currentUser', JSON.stringify(currentUser));
-            updateUIForUser();
-            closeModal('authModal');
-            showSuccessMessage('Login successful!');
-            
-            if (currentUser && currentUser.role === 'student') {
-                showPage('studentDashboard');
-                loadStudentData();
-            } else if (currentUser) {
-                showPage('adminDashboard');
-                loadAdminData();
-            }
-        } else {
-            showErrorMessage(data.message || 'Login failed');
+        // Simpan user menggunakan helper function
+        saveCurrentUser(user);
+        currentUser = user;
+        
+        updateUIForUser();
+        closeModal('authModal');
+        showSuccessMessage('Login successful!');
+        
+        if (currentUser && currentUser.role === 'student') {
+            showPage('studentDashboard');
+            loadStudentData();
+        } else if (currentUser) {
+            showPage('adminDashboard');
+            loadAdminData();
         }
-    } catch (error) {
-        showErrorMessage('Network error. Please check if the server is running.');
+    } catch (error: any) {
+        showErrorMessage(error.message || 'Login failed');
         console.error('Login error:', error);
     }
 }
@@ -346,29 +370,21 @@ async function handleRegister(e: Event): Promise<void> {
     const role = (document.getElementById('registerRole') as HTMLSelectElement).value as UserRole;
 
     try {
-        const response = await fetch(`${API_BASE}/auth/register`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name, email, password, role })
-        });
-
-        const data = await response.json();
+        // Menggunakan fungsi dari api.ts
+        await registerUser(name, email, password, role);
         
-        if (response.ok) {
-            showSuccessMessage('Registration successful! Please login.');
-            switchAuthTab('login');
-        } else {
-            showErrorMessage(data.message || 'Registration failed');
-        }
-    } catch (error) {
-        showErrorMessage('Network error. Please check if the server is running.');
+        showSuccessMessage('Registration successful! Please login.');
+        switchAuthTab('login');
+    } catch (error: any) {
+        showErrorMessage(error.message || 'Registration failed');
         console.error('Register error:', error);
     }
 }
 
 function logout(): void {
+    // Menggunakan helper function dari api.ts
+    clearCurrentUser();
     currentUser = null;
-    localStorage.removeItem('currentUser');
     updateUIForUser();
     showPage('homePage');
     showSuccessMessage('Logged out successfully');
@@ -390,9 +406,8 @@ function updateUIForUser(): void {
 // Courses
 async function loadCourses(): Promise<void> {
     try {
-        const response = await fetch(`${API_BASE}/courses`);
-        const data = await response.json();
-        courses = data.courses || [];
+        // Menggunakan fungsi dari api.ts
+        courses = await getAllCourses();
         displayCourses(courses);
     } catch (error) {
         console.error('Error loading courses:', error);
@@ -440,24 +455,14 @@ async function enrollInCourse(courseId: number): Promise<void> {
     }
 
     try {
-        const response = await fetch(`${API_BASE}/courses/${courseId}/enroll`, {
-            method: 'POST',
-            headers: { 
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${currentUser.id}`
-            }
-        });
-
-        const data = await response.json();
+        // Menggunakan fungsi dari api.ts
+        await enrollMeInCourse(courseId);
         
-        if (response.ok) {
-            showSuccessMessage('Successfully enrolled in course!');
-            loadStudentData();
-        } else {
-            showErrorMessage(data.message || 'Enrollment failed');
-        }
-    } catch (error) {
+        showSuccessMessage('Successfully enrolled in course!');
+        loadStudentData();
+    } catch (error: any) {
         console.error('Enrollment error:', error);
+        showErrorMessage(error.message || 'Enrollment failed');
         // Fallback: add to local enrolled courses
         if (!enrolledCourses.find(c => c.id === courseId)) {
             const course = courses.find(c => c.id === courseId);
@@ -522,19 +527,9 @@ async function loadStudentData(): Promise<void> {
     if (!currentUser || currentUser.role !== 'student') return;
 
     try {
-        // Load enrolled courses
-        const enrollResponse = await fetch(`${API_BASE}/students/${currentUser.id}/courses`, {
-            headers: { 'Authorization': `Bearer ${currentUser.id}` }
-        });
-        const enrollData = await enrollResponse.json();
-        enrolledCourses = enrollData.courses || [];
-
-        // Load assignments
-        const assignResponse = await fetch(`${API_BASE}/students/${currentUser.id}/assignments`, {
-            headers: { 'Authorization': `Bearer ${currentUser.id}` }
-        });
-        const assignData = await assignResponse.json();
-        assignments = assignData.assignments || [];
+        // Menggunakan fungsi dari api.ts - lebih mudah dan bersih!
+        enrolledCourses = await getMyCourses();
+        assignments = await getMyAssignments();
 
         displayEnrolledCourses();
         displayTasks();
@@ -670,38 +665,34 @@ async function handleAssignmentSubmit(e: Event): Promise<void> {
     const title = (document.getElementById('assignmentTitle') as HTMLInputElement).value;
     const content = (document.getElementById('assignmentContent') as HTMLTextAreaElement).value;
 
+    if (!currentUser) {
+        showErrorMessage('Please login first');
+        return;
+    }
+
     try {
-        const url = assignmentId ? 
-            `${API_BASE}/assignments/${assignmentId}` : 
-            `${API_BASE}/assignments`;
-        
-        const method = assignmentId ? 'PUT' : 'POST';
-
-        const response = await fetch(url, {
-            method: method,
-            headers: { 
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${currentUser!.id}`
-            },
-            body: JSON.stringify({
-                courseId,
-                title,
-                content,
-                studentId: currentUser!.id
-            })
-        });
-
-        const data = await response.json();
-        
-        if (response.ok) {
-            showSuccessMessage(assignmentId ? 'Assignment updated successfully!' : 'Assignment submitted successfully!');
-            closeModal('assignmentModal');
-            loadStudentData();
+        if (assignmentId) {
+            // Update existing assignment menggunakan fungsi dari api.ts
+            await updateAssignment(
+                parseInt(assignmentId),
+                { title, content },
+                currentUser.id
+            );
+            showSuccessMessage('Assignment updated successfully!');
         } else {
-            showErrorMessage(data.message || 'Submission failed');
+            // Submit new assignment menggunakan fungsi dari api.ts
+            await submitAssignment(
+                { courseId, title, content },
+                currentUser.id
+            );
+            showSuccessMessage('Assignment submitted successfully!');
         }
-    } catch (error) {
+        
+        closeModal('assignmentModal');
+        loadStudentData();
+    } catch (error: any) {
         console.error('Assignment error:', error);
+        showErrorMessage(error.message || 'Submission failed');
         // Fallback: add to local assignments
         const newAssignment: Assignment = {
             id: assignmentId ? parseInt(assignmentId) : Date.now(),
@@ -710,7 +701,7 @@ async function handleAssignmentSubmit(e: Event): Promise<void> {
             content,
             status: 'submitted',
             submittedAt: new Date().toISOString(),
-            studentId: currentUser!.id,
+            studentId: currentUser.id,
             courseTitle: enrolledCourses.find(c => c.id === courseId)?.title
         };
         
@@ -798,31 +789,28 @@ async function handleCourseSubmit(e: Event): Promise<void> {
         duration: parseInt((document.getElementById('courseDuration') as HTMLInputElement).value)
     };
 
+    if (!currentUser || currentUser.role !== 'admin') {
+        showErrorMessage('Only admin can manage courses');
+        return;
+    }
+
     try {
-        const url = courseId ? `${API_BASE}/courses/${courseId}` : `${API_BASE}/courses`;
-        const method = courseId ? 'PUT' : 'POST';
-
-        const response = await fetch(url, {
-            method: method,
-            headers: { 
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${currentUser!.id}`
-            },
-            body: JSON.stringify(courseData)
-        });
-
-        const data = await response.json();
-        
-        if (response.ok) {
-            showSuccessMessage(courseId ? 'Course updated successfully!' : 'Course created successfully!');
-            closeModal('courseModal');
-            await loadCourses();
-            displayAdminCourses();
+        if (courseId) {
+            // Update existing course menggunakan fungsi dari api.ts
+            await updateCourse(parseInt(courseId), courseData, currentUser.id);
+            showSuccessMessage('Course updated successfully!');
         } else {
-            showErrorMessage(data.message || 'Operation failed');
+            // Create new course menggunakan fungsi dari api.ts
+            await createCourse(courseData, currentUser.id);
+            showSuccessMessage('Course created successfully!');
         }
-    } catch (error) {
+        
+        closeModal('courseModal');
+        await loadCourses();
+        displayAdminCourses();
+    } catch (error: any) {
         console.error('Course error:', error);
+        showErrorMessage(error.message || 'Operation failed');
         // Fallback: update local courses
         if (courseId) {
             const index = courses.findIndex(c => c.id === parseInt(courseId));
@@ -848,22 +836,21 @@ async function handleCourseSubmit(e: Event): Promise<void> {
 async function deleteCourse(courseId: number): Promise<void> {
     if (!confirm('Are you sure you want to delete this course?')) return;
 
-    try {
-        const response = await fetch(`${API_BASE}/courses/${courseId}`, {
-            method: 'DELETE',
-            headers: { 'Authorization': `Bearer ${currentUser!.id}` }
-        });
+    if (!currentUser || currentUser.role !== 'admin') {
+        showErrorMessage('Only admin can delete courses');
+        return;
+    }
 
-        if (response.ok) {
-            showSuccessMessage('Course deleted successfully!');
-            await loadCourses();
-            displayAdminCourses();
-        } else {
-            const data = await response.json();
-            showErrorMessage(data.message || 'Delete failed');
-        }
-    } catch (error) {
+    try {
+        // Menggunakan fungsi dari api.ts
+        await apiDeleteCourse(courseId, currentUser.id);
+        
+        showSuccessMessage('Course deleted successfully!');
+        await loadCourses();
+        displayAdminCourses();
+    } catch (error: any) {
         console.error('Delete error:', error);
+        showErrorMessage(error.message || 'Delete failed');
         // Fallback: remove from local courses
         courses = courses.filter(c => c.id !== courseId);
         showSuccessMessage('Course deleted successfully!');

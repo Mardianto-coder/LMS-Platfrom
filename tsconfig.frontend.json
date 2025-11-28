@@ -16,5 +16,8 @@
   "include": [
     "src/frontend/**/*",
     "src/types/**/*"
+  ],
+  "exclude": [
+    "src/frontend/app-contoh-penggunaan-api.ts"
   ]
 }

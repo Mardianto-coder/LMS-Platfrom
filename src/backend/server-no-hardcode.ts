@@ -1,16 +1,15 @@
+/**
+ * CONTOH: Server tanpa hardcode courses
+ * 
+ * File ini menunjukkan cara menghapus hardcode dan menggunakan data dari API
+ * Copy isi file ini ke server.ts untuk menghapus hardcode
+ */
+
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import bodyParser from 'body-parser';
 import path from 'path';
 import { User, Course, Enrollment, Assignment, UserRole, CourseData, AssignmentData } from '../types/index';
-import { 
-    loadData, 
-    saveUsers, 
-    saveCourses, 
-    saveEnrollments, 
-    saveAssignments, 
-    saveCounters 
-} from './data-storage.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -18,29 +17,59 @@ const PORT = process.env.PORT || 3000;
 // Middleware
 app.use(cors());
 app.use(bodyParser.json());
-// File server ada di dist/backend/backend/, jadi perlu naik 3 level ke root
-app.use(express.static(path.join(__dirname, '../../../')));
+app.use(express.static(path.join(__dirname, '../../')));
 
 // Extend Express Request to include user
 interface AuthRequest extends Request {
     user?: User;
 }
 
-// Load data dari file (persistent storage)
-const initialData = loadData();
-let users: User[] = initialData.users;
-let courses: Course[] = initialData.courses;
-let enrollments: Enrollment[] = initialData.enrollments;
-let assignments: Assignment[] = initialData.assignments;
+// ============================================
+// IN-MEMORY DATABASE (TANPA HARDCODE)
+// ============================================
+// Data kosong, semua data ditambah via API
+let users: User[] = [];
+let courses: Course[] = []; // KOSONG - tidak hardcode!
+let enrollments: Enrollment[] = [];
+let assignments: Assignment[] = [];
 
-let nextUserId = initialData.counters.nextUserId;
-let nextCourseId = initialData.counters.nextCourseId;
-let nextAssignmentId = initialData.counters.nextAssignmentId;
+let nextUserId = 1;
+let nextCourseId = 1; // Mulai dari 1, bukan 5
+let nextAssignmentId = 1;
 
-// Helper function untuk save counters
-function saveAllCounters(): void {
-    saveCounters({ nextUserId, nextCourseId, nextAssignmentId });
+// ============================================
+// OPSIONAL: Seed Data Awal (Jika Perlu)
+// ============================================
+// Uncomment fungsi di bawah jika ingin data awal untuk testing
+/*
+function seedInitialData() {
+    // Hanya seed jika data kosong
+    if (courses.length === 0) {
+        courses.push(
+            {
+                id: nextCourseId++,
+                title: 'Introduction to Web Development',
+                description: 'Learn the fundamentals of HTML, CSS, and JavaScript to build modern web applications.',
+                category: 'programming',
+                duration: 40,
+                createdAt: new Date().toISOString()
+            },
+            {
+                id: nextCourseId++,
+                title: 'UI/UX Design Principles',
+                description: 'Master the art of creating beautiful and user-friendly interfaces.',
+                category: 'design',
+                duration: 30,
+                createdAt: new Date().toISOString()
+            }
+        );
+        console.log('✅ Initial data seeded');
+    }
 }
+
+// Panggil saat server start (opsional)
+// seedInitialData();
+*/
 
 // Helper function to authenticate user
 function authenticateUser(req: AuthRequest, res: Response, next: NextFunction): void {
@@ -72,11 +101,8 @@ function requireAdmin(req: AuthRequest, res: Response, next: NextFunction): void
 }
 
 // Routes
-
-// Serve index.html
 app.get('/', (_req: Request, res: Response) => {
-    // File server ada di dist/backend/backend/, jadi perlu naik 3 level ke root
-    res.sendFile(path.join(__dirname, '../../../index.html'));
+    res.sendFile(path.join(__dirname, '../../index.html'));
 });
 
 // Authentication Routes
@@ -102,14 +128,12 @@ app.post('/api/auth/register', (req: Request, res: Response) => {
         id: nextUserId++,
         name,
         email,
-        password, // In production, hash the password
+        password,
         role,
         createdAt: new Date().toISOString()
     };
     
     users.push(newUser);
-    saveUsers(users);
-    saveAllCounters();
     
     res.status(201).json({
         message: 'User registered successfully',
@@ -170,8 +194,6 @@ app.post('/api/courses', authenticateUser, requireAdmin, (req: AuthRequest, res:
     };
     
     courses.push(newCourse);
-    saveCourses(courses);
-    saveAllCounters();
     res.status(201).json({ message: 'Course created successfully', course: newCourse });
 });
 
@@ -193,7 +215,6 @@ app.put('/api/courses/:id', authenticateUser, requireAdmin, (req: AuthRequest, r
         duration: duration ? parseInt(duration.toString()) : courses[courseIndex].duration
     };
     
-    saveCourses(courses);
     res.json({ message: 'Course updated successfully', course: courses[courseIndex] });
 });
 
@@ -207,13 +228,9 @@ app.delete('/api/courses/:id', authenticateUser, requireAdmin, (req: AuthRequest
     }
     
     courses.splice(courseIndex, 1);
-    // Also remove enrollments and assignments for this course
     enrollments = enrollments.filter(e => e.courseId !== courseId);
     assignments = assignments.filter(a => a.courseId !== courseId);
     
-    saveCourses(courses);
-    saveEnrollments(enrollments);
-    saveAssignments(assignments);
     res.json({ message: 'Course deleted successfully' });
 });
 
@@ -247,7 +264,6 @@ app.post('/api/courses/:id/enroll', authenticateUser, (req: AuthRequest, res: Re
         enrolledAt: new Date().toISOString()
     });
     
-    saveEnrollments(enrollments);
     res.json({ message: 'Enrolled successfully' });
 });
 
@@ -300,7 +316,6 @@ app.post('/api/assignments', authenticateUser, (req: AuthRequest, res: Response)
         return;
     }
     
-    // Check if student is enrolled
     const enrollment = enrollments.find(
         e => e.studentId === req.user!.id && e.courseId === courseId
     );
@@ -321,8 +336,6 @@ app.post('/api/assignments', authenticateUser, (req: AuthRequest, res: Response)
     };
     
     assignments.push(newAssignment);
-    saveAssignments(assignments);
-    saveAllCounters();
     res.status(201).json({ message: 'Assignment submitted successfully', assignment: newAssignment });
 });
 
@@ -356,7 +369,6 @@ app.put('/api/assignments/:id', authenticateUser, (req: AuthRequest, res: Respon
         submittedAt: new Date().toISOString()
     };
     
-    saveAssignments(assignments);
     res.json({ message: 'Assignment updated successfully', assignment: assignments[assignmentIndex] });
 });
 
@@ -380,8 +392,7 @@ app.get('/api/assignments/:id', authenticateUser, (req: AuthRequest, res: Respon
 const server = app.listen(PORT, () => {
     console.log(`Server is running on http://localhost:${PORT}`);
     console.log(`API endpoints available at http://localhost:${PORT}/api`);
-    console.log(`💾 Data storage: File-based (persistent)`);
-    console.log(`📁 Data files: ./data/`);
+    console.log(`📝 Courses: ${courses.length} (Data ditambah via API, tidak hardcode)`);
 });
 
 // Handle server errors
