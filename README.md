@@ -2,16 +2,6 @@
 
 A comprehensive Learning Management System built with **TypeScript** (Frontend & Backend) and compiled to JavaScript.
 
-## 📸 Preview
-
-![LMS Platform Preview](images/lms-platform-preview.png)
-
-> **Note**: Untuk menambahkan gambar dari Canva:
-> 1. Buka link Canva: https://www.canva.com/design/DAG4q7E_jHs/UO-HywbWzhXkhgHyAAlPqA/edit
-> 2. Download gambar sebagai PNG atau JPG
-> 3. Simpan dengan nama `lms-platform-preview.png` di folder `images/`
-> 4. Gambar akan otomatis tampil di README
-
 ## Project Structure
 
 ```
