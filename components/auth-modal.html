@@ -28,6 +28,29 @@
                     </select>
                 </div>
                 <button type="submit" class="btn btn-primary">Login</button>
+                <div style="margin-top: 1rem; text-align: center;">
+                    <a href="#" id="forgotPasswordLink" style="color: var(--primary-color); text-decoration: none; font-size: 0.9em;">
+                        Forgot Password?
+                    </a>
+                </div>
+            </form>
+
+            <!-- Forgot Password Form -->
+            <form id="forgotPasswordForm" class="auth-form">
+                <h2>Reset Password</h2>
+                <p style="color: var(--text-light); margin-bottom: 1.5rem; font-size: 0.9em;">
+                    Enter your email address. If the email exists, you can use the register form to set a new password.
+                </p>
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" id="forgotPasswordEmail" required>
+                </div>
+                <button type="submit" class="btn btn-primary">Reset Password</button>
+                <div style="margin-top: 1rem; text-align: center;">
+                    <a href="#" id="backToLoginLink" style="color: var(--primary-color); text-decoration: none; font-size: 0.9em;">
+                        Back to Login
+                    </a>
+                </div>
             </form>
 
             <!-- Register Form -->
@@ -44,6 +67,9 @@
                 <div class="form-group">
                     <label>Password</label>
                     <input type="password" id="registerPassword" required>
+                    <small class="form-help-text" style="display: block; margin-top: 5px; color: #666; font-size: 0.85em;">
+                        Password harus minimal 6 karakter, mengandung huruf besar, huruf kecil, dan angka
+                    </small>
                 </div>
                 <div class="form-group">
                     <label>Role</label>

@@ -51,9 +51,28 @@ export function getCurrentUser(): User | null {
 /**
  * Menyimpan user ke localStorage setelah login
  * @param user - User object yang akan disimpan
+ * @param token - JWT token (optional)
  */
-export function saveCurrentUser(user: User): void {
+export function saveCurrentUser(user: User, token?: string): void {
     localStorage.setItem('currentUser', JSON.stringify(user));
+    if (token) {
+        localStorage.setItem('authToken', token);
+    }
+}
+
+/**
+ * Mendapatkan JWT token dari localStorage
+ * @returns JWT token atau null
+ */
+export function getAuthToken(): string | null {
+    return localStorage.getItem('authToken');
+}
+
+/**
+ * Menghapus token dari localStorage
+ */
+export function clearAuthToken(): void {
+    localStorage.removeItem('authToken');
 }
 
 /**
@@ -61,17 +80,22 @@ export function saveCurrentUser(user: User): void {
  */
 export function clearCurrentUser(): void {
     localStorage.removeItem('currentUser');
+    clearAuthToken();
 }
 
 /**
  * Membuat header untuk request yang memerlukan authentication
- * @param userId - ID user yang sedang login
+ * Menggunakan JWT token dari localStorage
  * @returns Object dengan headers yang diperlukan
  */
-function getAuthHeaders(userId: number): Record<string, string> {
+function getAuthHeaders(): Record<string, string> {
+    const token = getAuthToken();
+    if (!token) {
+        throw new Error('No authentication token found. Please login again.');
+    }
     return {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${userId}`
+        'Authorization': `Bearer ${token}`
     };
 }
 
@@ -111,16 +135,45 @@ export async function registerUser(
             body: JSON.stringify({ name, email, password, role })
         });
 
-        const data = await response.json();
+        // Check content type before parsing
+        const contentType = response.headers.get('content-type');
+        let data: any;
+        
+        if (contentType && contentType.includes('application/json')) {
+            data = await response.json();
+        } else {
+            // If not JSON, try to get text and parse
+            const text = await response.text();
+            try {
+                data = JSON.parse(text);
+            } catch {
+                throw new Error(text || 'Registration failed');
+            }
+        }
 
         if (!response.ok) {
-            throw new Error(data.message || 'Registration failed');
+            // Handle validation errors
+            if (data.errors && Array.isArray(data.errors) && data.errors.length > 0) {
+                const errorMessages = data.errors.map((err: any) => err.message).join(', ');
+                throw new Error(errorMessages || data.message || 'Registration failed');
+            }
+            throw new Error(data.message || data.error || 'Registration failed');
+        }
+
+        // Simpan token jika ada
+        if (data.token) {
+            saveCurrentUser(data.user, data.token);
         }
 
         return data.user;
-    } catch (error) {
+    } catch (error: any) {
         console.error('Register error:', error);
-        throw error;
+        // If error is already an Error object, throw it
+        if (error instanceof Error) {
+            throw error;
+        }
+        // Otherwise, wrap it
+        throw new Error(error.message || 'Registration failed');
     }
 }
 
@@ -152,16 +205,183 @@ export async function loginUser(
             body: JSON.stringify({ email, password, role })
         });
 
-        const data = await response.json();
+        // Check content type before parsing
+        const contentType = response.headers.get('content-type');
+        let data: any;
+        
+        if (contentType && contentType.includes('application/json')) {
+            data = await response.json();
+        } else {
+            // If not JSON, try to get text and parse
+            const text = await response.text();
+            try {
+                data = JSON.parse(text);
+            } catch {
+                throw new Error(text || 'Login failed');
+            }
+        }
 
         if (!response.ok) {
-            throw new Error(data.message || 'Login failed');
+            // Handle validation errors
+            if (data.errors && Array.isArray(data.errors) && data.errors.length > 0) {
+                const errorMessages = data.errors.map((err: any) => err.message).join(', ');
+                throw new Error(errorMessages || data.message || 'Login failed');
+            }
+            throw new Error(data.message || data.error || 'Login failed');
+        }
+
+        // Simpan token jika ada
+        if (data.token) {
+            saveCurrentUser(data.user, data.token);
         }
 
         return data.user;
-    } catch (error) {
+    } catch (error: any) {
         console.error('Login error:', error);
-        throw error;
+        // If error is already an Error object, throw it
+        if (error instanceof Error) {
+            throw error;
+        }
+        // Otherwise, wrap it
+        throw new Error(error.message || 'Login failed');
+    }
+}
+
+/**
+ * Reset password dengan email
+ * 
+ * @param email - Email user yang ingin reset password
+ * @returns Promise<void>
+ */
+export async function resetPassword(email: string): Promise<void> {
+    try {
+        const response = await fetch(`${API_BASE}/auth/reset-password`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ email })
+        });
+
+        const contentType = response.headers.get('content-type');
+        let data: any;
+        
+        if (contentType && contentType.includes('application/json')) {
+            data = await response.json();
+        } else {
+            const text = await response.text();
+            try {
+                data = JSON.parse(text);
+            } catch {
+                throw new Error(text || 'Password reset failed');
+            }
+        }
+
+        if (!response.ok) {
+            throw new Error(data.message || data.error || 'Password reset failed');
+        }
+    } catch (error: any) {
+        console.error('Reset password error:', error);
+        if (error instanceof Error) {
+            throw error;
+        }
+        throw new Error(error.message || 'Password reset failed');
+    }
+}
+
+/**
+ * Change password (untuk user yang sudah login)
+ * 
+ * @param currentPassword - Password saat ini
+ * @param newPassword - Password baru
+ * @returns Promise<void>
+ */
+export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+    try {
+        const response = await fetch(`${API_BASE}/auth/change-password`, {
+            method: 'PUT',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ currentPassword, password: newPassword })
+        });
+
+        const contentType = response.headers.get('content-type');
+        let data: any;
+        
+        if (contentType && contentType.includes('application/json')) {
+            data = await response.json();
+        } else {
+            const text = await response.text();
+            try {
+                data = JSON.parse(text);
+            } catch {
+                throw new Error(text || 'Change password failed');
+            }
+        }
+
+        if (!response.ok) {
+            if (data.errors && Array.isArray(data.errors) && data.errors.length > 0) {
+                const errorMessages = data.errors.map((err: any) => err.message).join(', ');
+                throw new Error(errorMessages || data.message || 'Change password failed');
+            }
+            throw new Error(data.message || data.error || 'Change password failed');
+        }
+    } catch (error: any) {
+        console.error('Change password error:', error);
+        if (error instanceof Error) {
+            throw error;
+        }
+        throw new Error(error.message || 'Change password failed');
+    }
+}
+
+/**
+ * Update email (untuk user yang sudah login)
+ * 
+ * @param newEmail - Email baru
+ * @returns Promise<User>
+ */
+export async function updateEmail(newEmail: string): Promise<User> {
+    try {
+        const response = await fetch(`${API_BASE}/auth/update-email`, {
+            method: 'PUT',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ email: newEmail })
+        });
+
+        const contentType = response.headers.get('content-type');
+        let data: any;
+        
+        if (contentType && contentType.includes('application/json')) {
+            data = await response.json();
+        } else {
+            const text = await response.text();
+            try {
+                data = JSON.parse(text);
+            } catch {
+                throw new Error(text || 'Update email failed');
+            }
+        }
+
+        if (!response.ok) {
+            if (data.errors && Array.isArray(data.errors) && data.errors.length > 0) {
+                const errorMessages = data.errors.map((err: any) => err.message).join(', ');
+                throw new Error(errorMessages || data.message || 'Update email failed');
+            }
+            throw new Error(data.message || data.error || 'Update email failed');
+        }
+
+        // Update token jika ada
+        if (data.token) {
+            saveCurrentUser(data.user, data.token);
+        }
+
+        return data.user;
+    } catch (error: any) {
+        console.error('Update email error:', error);
+        if (error instanceof Error) {
+            throw error;
+        }
+        throw new Error(error.message || 'Update email failed');
     }
 }
 
@@ -246,13 +466,12 @@ export async function getCourseById(courseId: number): Promise<Course> {
  * ```
  */
 export async function createCourse(
-    courseData: CourseData,
-    userId: number
+    courseData: CourseData
 ): Promise<Course> {
     try {
         const response = await fetch(`${API_BASE}/courses`, {
             method: 'POST',
-            headers: getAuthHeaders(userId),
+            headers: getAuthHeaders(),
             body: JSON.stringify(courseData)
         });
 
@@ -289,13 +508,12 @@ export async function createCourse(
  */
 export async function updateCourse(
     courseId: number,
-    courseData: Partial<CourseData>,
-    userId: number
+    courseData: Partial<CourseData>
 ): Promise<Course> {
     try {
         const response = await fetch(`${API_BASE}/courses/${courseId}`, {
             method: 'PUT',
-            headers: getAuthHeaders(userId),
+            headers: getAuthHeaders(),
             body: JSON.stringify(courseData)
         });
 
@@ -326,15 +544,12 @@ export async function updateCourse(
  * ```
  */
 export async function deleteCourse(
-    courseId: number,
-    userId: number
+    courseId: number
 ): Promise<void> {
     try {
         const response = await fetch(`${API_BASE}/courses/${courseId}`, {
             method: 'DELETE',
-            headers: {
-                'Authorization': `Bearer ${userId}`
-            }
+            headers: getAuthHeaders()
         });
 
         if (!response.ok) {
@@ -367,16 +582,12 @@ export async function deleteCourse(
  * ```
  */
 export async function enrollInCourse(
-    courseId: number,
-    userId: number
+    courseId: number
 ): Promise<void> {
     try {
         const response = await fetch(`${API_BASE}/courses/${courseId}/enroll`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${userId}`
-            }
+            headers: getAuthHeaders()
         });
 
         const data = await response.json();
@@ -411,9 +622,7 @@ export async function enrollInCourse(
 export async function getStudentCourses(studentId: number): Promise<Course[]> {
     try {
         const response = await fetch(`${API_BASE}/students/${studentId}/courses`, {
-            headers: {
-                'Authorization': `Bearer ${studentId}`
-            }
+            headers: getAuthHeaders()
         });
 
         const data = await response.json();
@@ -446,9 +655,7 @@ export async function getStudentCourses(studentId: number): Promise<Course[]> {
 export async function getStudentAssignments(studentId: number): Promise<Assignment[]> {
     try {
         const response = await fetch(`${API_BASE}/students/${studentId}/assignments`, {
-            headers: {
-                'Authorization': `Bearer ${studentId}`
-            }
+            headers: getAuthHeaders()
         });
 
         const data = await response.json();
@@ -488,17 +695,13 @@ export async function getStudentAssignments(studentId: number): Promise<Assignme
  * ```
  */
 export async function submitAssignment(
-    assignmentData: AssignmentData,
-    userId: number
+    assignmentData: AssignmentData
 ): Promise<Assignment> {
     try {
         const response = await fetch(`${API_BASE}/assignments`, {
             method: 'POST',
-            headers: getAuthHeaders(userId),
-            body: JSON.stringify({
-                ...assignmentData,
-                studentId: userId
-            })
+            headers: getAuthHeaders(),
+            body: JSON.stringify(assignmentData)
         });
 
         const data = await response.json();
@@ -532,13 +735,12 @@ export async function submitAssignment(
  */
 export async function updateAssignment(
     assignmentId: number,
-    assignmentData: Partial<AssignmentData>,
-    userId: number
+    assignmentData: Partial<AssignmentData>
 ): Promise<Assignment> {
     try {
         const response = await fetch(`${API_BASE}/assignments/${assignmentId}`, {
             method: 'PUT',
-            headers: getAuthHeaders(userId),
+            headers: getAuthHeaders(),
             body: JSON.stringify(assignmentData)
         });
 
@@ -569,14 +771,11 @@ export async function updateAssignment(
  * ```
  */
 export async function getAssignmentById(
-    assignmentId: number,
-    userId: number
+    assignmentId: number
 ): Promise<Assignment> {
     try {
         const response = await fetch(`${API_BASE}/assignments/${assignmentId}`, {
-            headers: {
-                'Authorization': `Bearer ${userId}`
-            }
+            headers: getAuthHeaders()
         });
 
         const data = await response.json();
@@ -654,6 +853,6 @@ export async function enrollMeInCourse(courseId: number): Promise<void> {
     if (!user) {
         throw new Error('User not logged in');
     }
-    return enrollInCourse(courseId, user.id);
+    return enrollInCourse(courseId);
 }
 

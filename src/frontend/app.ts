@@ -22,7 +22,10 @@ import {
     updateAssignment,
     createCourse,
     updateCourse,
-    deleteCourse as apiDeleteCourse
+    deleteCourse as apiDeleteCourse,
+    resetPassword
+    // changePassword, // Untuk fitur change password di dashboard (akan ditambahkan nanti)
+    // updateEmail // Untuk fitur update email di dashboard (akan ditambahkan nanti)
 } from './api.js';
 
 // State Management
@@ -248,9 +251,66 @@ function setupEventListeners(): void {
     setTimeout(() => {
         const loginForm = document.getElementById('loginForm') as HTMLFormElement;
         const registerForm = document.getElementById('registerForm') as HTMLFormElement;
+        const forgotPasswordForm = document.getElementById('forgotPasswordForm') as HTMLFormElement;
         loginForm?.addEventListener('submit', handleLogin);
         registerForm?.addEventListener('submit', handleRegister);
+        forgotPasswordForm?.addEventListener('submit', handleForgotPassword);
     }, 100);
+
+    // Course actions - using event delegation
+    document.body.addEventListener('click', (e: Event) => {
+        const target = e.target as HTMLElement;
+        const action = target.getAttribute('data-action');
+        const courseId = target.getAttribute('data-course-id');
+        
+        if (action && courseId) {
+            e.preventDefault();
+            e.stopPropagation();
+            if (action === 'edit') {
+                editCourse(parseInt(courseId));
+            } else if (action === 'delete') {
+                deleteCourse(parseInt(courseId));
+            }
+        }
+    });
+
+    // Add Course button
+    document.body.addEventListener('click', (e: Event) => {
+        const target = e.target as HTMLElement;
+        if (target.id === 'addCourseBtn' || target.closest('#addCourseBtn')) {
+            e.preventDefault();
+            openCourseModal();
+        }
+    });
+
+    // Course actions - using event delegation (untuk tombol Edit dan Delete)
+    document.body.addEventListener('click', (e: Event) => {
+        const target = e.target as HTMLElement;
+        const action = target.getAttribute('data-action');
+        const courseId = target.getAttribute('data-course-id');
+        
+        if (action && courseId) {
+            e.preventDefault();
+            e.stopPropagation();
+            console.log('[App] Course action clicked:', action, 'courseId:', courseId);
+            if (action === 'edit') {
+                editCourse(parseInt(courseId));
+            } else if (action === 'delete') {
+                deleteCourse(parseInt(courseId));
+            }
+        }
+    });
+
+    // Add Course button handler
+    document.body.addEventListener('click', (e: Event) => {
+        const target = e.target as HTMLElement;
+        if (target.id === 'addCourseBtn' || target.closest('#addCourseBtn')) {
+            e.preventDefault();
+            e.stopPropagation();
+            console.log('[App] Add course button clicked');
+            openCourseModal();
+        }
+    });
 
     // Close modals - using event delegation
     document.body.addEventListener('click', (e: Event) => {
@@ -317,16 +377,18 @@ function openAuthModal(): void {
     switchAuthTab('login');
 }
 
-function switchAuthTab(tab: 'login' | 'register'): void {
+function switchAuthTab(tab: 'login' | 'register' | 'forgot'): void {
     document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
     document.querySelectorAll('.auth-form').forEach(form => form.classList.remove('active'));
     
     if (tab === 'login') {
         document.getElementById('loginTab')?.classList.add('active');
         document.getElementById('loginForm')?.classList.add('active');
-    } else {
+    } else if (tab === 'register') {
         document.getElementById('registerTab')?.classList.add('active');
         document.getElementById('registerForm')?.classList.add('active');
+    } else if (tab === 'forgot') {
+        document.getElementById('forgotPasswordForm')?.classList.add('active');
     }
 }
 
@@ -341,6 +403,7 @@ async function handleLogin(e: Event): Promise<void> {
         // Menggunakan fungsi dari api.ts
         const user = await loginUser(email, password, role);
         
+        // Token sudah disimpan di loginUser (dari api.ts)
         // Simpan user menggunakan helper function
         saveCurrentUser(user);
         currentUser = user;
@@ -366,8 +429,34 @@ async function handleRegister(e: Event): Promise<void> {
     e.preventDefault();
     const name = (document.getElementById('registerName') as HTMLInputElement).value;
     const email = (document.getElementById('registerEmail') as HTMLInputElement).value;
-    const password = (document.getElementById('registerPassword') as HTMLInputElement).value;
+    const passwordInput = document.getElementById('registerPassword') as HTMLInputElement;
+    const password = passwordInput.value;
     const role = (document.getElementById('registerRole') as HTMLSelectElement).value as UserRole;
+
+    // Validasi password di frontend sebelum submit
+    if (password.length < 6) {
+        showErrorMessage('Password harus minimal 6 karakter');
+        passwordInput.focus();
+        return;
+    }
+    
+    if (!/[a-z]/.test(password)) {
+        showErrorMessage('Password harus mengandung minimal 1 huruf kecil');
+        passwordInput.focus();
+        return;
+    }
+    
+    if (!/[A-Z]/.test(password)) {
+        showErrorMessage('Password harus mengandung minimal 1 huruf besar');
+        passwordInput.focus();
+        return;
+    }
+    
+    if (!/\d/.test(password)) {
+        showErrorMessage('Password harus mengandung minimal 1 angka');
+        passwordInput.focus();
+        return;
+    }
 
     try {
         // Menggunakan fungsi dari api.ts
@@ -378,6 +467,22 @@ async function handleRegister(e: Event): Promise<void> {
     } catch (error: any) {
         showErrorMessage(error.message || 'Registration failed');
         console.error('Register error:', error);
+    }
+}
+
+async function handleForgotPassword(e: Event): Promise<void> {
+    e.preventDefault();
+    const email = (document.getElementById('forgotPasswordEmail') as HTMLInputElement).value;
+
+    try {
+        await resetPassword(email);
+        showSuccessMessage('Password reset initiated. You can now use the register form with your email to set a new password.');
+        switchAuthTab('register');
+        // Pre-fill email in register form
+        (document.getElementById('registerEmail') as HTMLInputElement).value = email;
+    } catch (error: any) {
+        showErrorMessage(error.message || 'Password reset failed');
+        console.error('Forgot password error:', error);
     }
 }
 
@@ -675,15 +780,13 @@ async function handleAssignmentSubmit(e: Event): Promise<void> {
             // Update existing assignment menggunakan fungsi dari api.ts
             await updateAssignment(
                 parseInt(assignmentId),
-                { title, content },
-                currentUser.id
+                { title, content }
             );
             showSuccessMessage('Assignment updated successfully!');
         } else {
             // Submit new assignment menggunakan fungsi dari api.ts
             await submitAssignment(
-                { courseId, title, content },
-                currentUser.id
+                { courseId, title, content }
             );
             showSuccessMessage('Assignment submitted successfully!');
         }
@@ -738,8 +841,8 @@ function displayAdminCourses(): void {
                 <span>⏱ ${course.duration} hours</span>
             </div>
             <div class="course-actions">
-                <button class="btn btn-primary" onclick="window.editCourse(${course.id})">Edit</button>
-                <button class="btn btn-danger" onclick="window.deleteCourse(${course.id})">Delete</button>
+                <button class="btn btn-primary" data-action="edit" data-course-id="${course.id}">Edit</button>
+                <button class="btn btn-danger" data-action="delete" data-course-id="${course.id}">Delete</button>
             </div>
         </div>
     `).join('');
@@ -797,11 +900,11 @@ async function handleCourseSubmit(e: Event): Promise<void> {
     try {
         if (courseId) {
             // Update existing course menggunakan fungsi dari api.ts
-            await updateCourse(parseInt(courseId), courseData, currentUser.id);
+            await updateCourse(parseInt(courseId), courseData);
             showSuccessMessage('Course updated successfully!');
         } else {
             // Create new course menggunakan fungsi dari api.ts
-            await createCourse(courseData, currentUser.id);
+            await createCourse(courseData);
             showSuccessMessage('Course created successfully!');
         }
         
@@ -843,7 +946,7 @@ async function deleteCourse(courseId: number): Promise<void> {
 
     try {
         // Menggunakan fungsi dari api.ts
-        await apiDeleteCourse(courseId, currentUser.id);
+        await apiDeleteCourse(courseId);
         
         showSuccessMessage('Course deleted successfully!');
         await loadCourses();

@@ -271,6 +271,19 @@ body {
     border-color: var(--primary-color);
 }
 
+.form-help-text {
+    display: block;
+    margin-top: 0.5rem;
+    font-size: 0.85em;
+    color: var(--text-light);
+    line-height: 1.4;
+}
+
+.form-help-text::before {
+    content: "ℹ️ ";
+    margin-right: 0.25rem;
+}
+
 /* Search and Filter */
 .search-filter {
     display: flex;
