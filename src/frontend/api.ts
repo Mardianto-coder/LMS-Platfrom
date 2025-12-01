@@ -116,7 +116,8 @@ function getAuthHeaders(): Record<string, string> {
  * 
  * @example
  * ```typescript
- * const user = await registerUser('John Doe', 'john@example.com', 'password123', 'student');
+ * // CATATAN: 'TEST_Password123' adalah contoh untuk dokumentasi, bukan password real
+ * const user = await registerUser('John Doe', 'john@example.com', 'TEST_Password123', 'student');
  * console.log('User ID:', user.id);
  * ```
  */
@@ -187,7 +188,8 @@ export async function registerUser(
  * 
  * @example
  * ```typescript
- * const user = await loginUser('john@example.com', 'password123', 'student');
+ * // CATATAN: 'TEST_Password123' adalah contoh untuk dokumentasi, bukan password real
+ * const user = await loginUser('john@example.com', 'TEST_Password123', 'student');
  * saveCurrentUser(user); // Simpan ke localStorage
  * ```
  */
