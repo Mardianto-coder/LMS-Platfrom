@@ -37,6 +37,10 @@ export interface Assignment {
     status: AssignmentStatus;
     submittedAt: string;
     courseTitle?: string;
+    score?: number; // Score dari 0-100 (hanya untuk graded assignments)
+    feedback?: string; // Feedback dari admin (hanya untuk graded assignments)
+    gradedAt?: string; // Tanggal kapan assignment di-grade
+    gradedBy?: number; // ID admin yang melakukan grading
 }
 
 export interface ApiResponse {

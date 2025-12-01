@@ -76,6 +76,13 @@ body {
     display: block;
 }
 
+/* Ensure student dashboard is hidden for admin users */
+body:has(#adminDashboard.active) #studentDashboard {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+}
+
 .container {
     max-width: 1200px;
     margin: 0 auto;
@@ -442,6 +449,37 @@ body {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
     gap: 1.5rem;
+}
+
+/* Admin Dashboard - More compact, no forced height */
+/* Admin Dashboard - More compact, no forced height */
+#adminDashboard.page,
+#adminDashboard.page.active {
+    min-height: auto !important;
+    height: auto !important;
+    max-height: none !important;
+    padding: 1rem 2rem !important;
+    overflow: visible !important;
+}
+
+#adminDashboard .container {
+    padding-bottom: 0 !important;
+    margin-bottom: 0 !important;
+    height: auto !important;
+    min-height: auto !important;
+}
+
+#adminDashboard .dashboard-section {
+    margin-bottom: 1rem !important;
+    padding: 1.5rem !important;
+    height: auto !important;
+    min-height: auto !important;
+}
+
+#adminDashboard h1 {
+    margin-bottom: 1rem !important;
+    font-size: 1.75rem !important;
+    margin-top: 0 !important;
 }
 
 .progress-card {

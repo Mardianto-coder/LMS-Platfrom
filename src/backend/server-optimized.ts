@@ -12,6 +12,10 @@
  * - Error handling yang aman
  */
 
+// Load environment variables from .env file
+import dotenv from 'dotenv';
+dotenv.config();
+
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import bodyParser from 'body-parser';
@@ -56,12 +60,26 @@ app.use(helmet({
     contentSecurityPolicy: {
         directives: {
             defaultSrc: ["'self'"],
-            styleSrc: ["'self'", "'unsafe-inline'"],
-            scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"], // Allow unsafe-eval for onclick handlers
+            styleSrc: ["'self'", "'unsafe-inline'"], // Allow inline styles (needed for dynamic styling)
+            // Remove unsafe-eval for better security
+            // Note: onclick handlers in frontend should be refactored to event listeners for production
+            scriptSrc: process.env.NODE_ENV === 'production' 
+                ? ["'self'"] // Production: strict - no inline scripts
+                : ["'self'", "'unsafe-inline'"], // Development: allow inline for onclick handlers
             imgSrc: ["'self'", "data:", "https:"],
+            connectSrc: ["'self'"],
+            fontSrc: ["'self'", "data:"],
+            objectSrc: ["'none'"],
+            upgradeInsecureRequests: process.env.NODE_ENV === 'production' ? [] : null, // Force HTTPS in production
         },
     },
     crossOriginEmbedderPolicy: false,
+    // Additional security headers
+    hsts: {
+        maxAge: 31536000, // 1 year
+        includeSubDomains: true,
+        preload: true
+    },
 }));
 
 // CORS configuration (lebih secure)
@@ -81,9 +99,6 @@ app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
 
 // Sanitize input
 app.use(sanitizeInput);
-
-// Static files
-app.use(express.static(path.join(__dirname, '../../../')));
 
 // ============================================
 // DATA STORAGE
@@ -395,6 +410,7 @@ app.put('/api/auth/update-email',
  * - Rate limiting
  */
 app.get('/api/courses', apiLimiter, (_req: Request, res: Response) => {
+    console.log(`[API] GET /api/courses - Returning ${courses.length} courses`);
     res.json({ courses });
 });
 
@@ -444,8 +460,12 @@ app.post('/api/courses',
             };
             
             courses.push(newCourse);
+            console.log(`[API] POST /api/courses - Course created: ${newCourse.title} (ID: ${newCourse.id})`);
+            console.log(`[API] Total courses in memory: ${courses.length}`);
             await saveCoursesAsync(courses);
+            console.log(`[API] Courses saved to file successfully`);
             await saveAllCounters();
+            console.log(`[API] Counters saved successfully`);
             
             res.status(201).json({ message: 'Course created successfully', course: newCourse });
         } catch (error) {
@@ -777,6 +797,38 @@ app.put('/api/assignments/:id',
 );
 
 /**
+ * Get all assignments (Admin only)
+ * - Authentication required
+ * - Admin role required
+ * - Returns all assignments with course and student info
+ */
+app.get('/api/assignments', 
+    apiLimiter,
+    authenticateUser,
+    requireAdmin,
+    async (_req: AuthRequest, res: Response) => {
+        try {
+            const assignmentsWithDetails = assignments.map(assignment => {
+                const course = courses.find(c => c.id === assignment.courseId);
+                const student = users.find(u => u.id === assignment.studentId);
+                return {
+                    ...assignment,
+                    courseTitle: course ? course.title : 'Unknown Course',
+                    studentName: student ? student.name : 'Unknown Student',
+                    studentEmail: student ? student.email : 'Unknown Email'
+                };
+            });
+            
+            console.log('[API] GET /api/assignments - Returning', assignmentsWithDetails.length, 'assignments');
+            res.json({ assignments: assignmentsWithDetails });
+        } catch (error) {
+            console.error('Get all assignments error:', error);
+            res.status(500).json({ message: 'Failed to fetch assignments' });
+        }
+    }
+);
+
+/**
  * Get assignment by ID
  * - Authentication required
  * - Student can only see their own assignments (unless admin)
@@ -803,13 +855,122 @@ app.get('/api/assignments/:id',
                 return;
             }
             
-            res.json({ assignment });
+            // Add course and student info for admin
+            if (req.user!.role === 'admin') {
+                const course = courses.find(c => c.id === assignment.courseId);
+                const student = users.find(u => u.id === assignment.studentId);
+                res.json({ 
+                    assignment: {
+                        ...assignment,
+                        courseTitle: course ? course.title : 'Unknown Course',
+                        studentName: student ? student.name : 'Unknown Student',
+                        studentEmail: student ? student.email : 'Unknown Email'
+                    }
+                });
+            } else {
+                res.json({ assignment });
+            }
         } catch (error) {
             console.error('Get assignment error:', error);
             res.status(500).json({ message: 'Failed to fetch assignment' });
         }
     }
 );
+
+/**
+ * Grade assignment (Admin only)
+ * - Authentication required
+ * - Admin role required
+ * - Can only grade submitted assignments
+ * - Updates status to 'graded' and adds score/feedback
+ */
+app.put('/api/assignments/:id/grade', 
+    apiLimiter,
+    authenticateUser,
+    requireAdmin,
+    body('score').isInt({ min: 0, max: 100 }).withMessage('Score must be between 0 and 100'),
+    body('feedback').optional().isLength({ min: 0, max: 2000 }).trim(),
+    checkValidation,
+    async (req: AuthRequest, res: Response) => {
+        try {
+            const assignmentId = parseInt(req.params.id);
+            if (isNaN(assignmentId)) {
+                res.status(400).json({ message: 'Invalid assignment ID' });
+                return;
+            }
+            
+            const assignmentIndex = assignments.findIndex(a => a.id === assignmentId);
+            if (assignmentIndex === -1) {
+                res.status(404).json({ message: 'Assignment not found' });
+                return;
+            }
+            
+            const assignment = assignments[assignmentIndex];
+            
+            if (assignment.status === 'graded') {
+                res.status(400).json({ message: 'Assignment has already been graded' });
+                return;
+            }
+            
+            if (assignment.status !== 'submitted') {
+                res.status(400).json({ message: 'Can only grade submitted assignments' });
+                return;
+            }
+            
+            const { score, feedback } = req.body;
+            
+            assignments[assignmentIndex] = {
+                ...assignments[assignmentIndex],
+                status: 'graded',
+                score: parseInt(score),
+                feedback: feedback || '',
+                gradedAt: new Date().toISOString(),
+                gradedBy: req.user!.id
+            };
+            
+            await saveAssignmentsAsync(assignments);
+            
+            const course = courses.find(c => c.id === assignment.courseId);
+            const student = users.find(u => u.id === assignment.studentId);
+            
+            console.log('[API] PUT /api/assignments/:id/grade - Assignment graded:', {
+                assignmentId,
+                courseTitle: course?.title,
+                studentName: student?.name,
+                score
+            });
+            
+            res.json({ 
+                message: 'Assignment graded successfully', 
+                assignment: {
+                    ...assignments[assignmentIndex],
+                    courseTitle: course ? course.title : 'Unknown Course',
+                    studentName: student ? student.name : 'Unknown Student',
+                    studentEmail: student ? student.email : 'Unknown Email'
+                }
+            });
+        } catch (error) {
+            console.error('Grade assignment error:', error);
+            res.status(500).json({ message: 'Failed to grade assignment' });
+        }
+    }
+);
+
+// ============================================
+// STATIC FILES (must be after API routes)
+// ============================================
+
+// Static files - serve after API routes to avoid conflicts
+// Add no-cache headers for JS files to prevent caching issues during development
+app.use(express.static(path.join(__dirname, '../../../'), {
+    setHeaders: (res, filePath) => {
+        if (filePath.endsWith('.js')) {
+            res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+            res.setHeader('Pragma', 'no-cache');
+            res.setHeader('Expires', '0');
+        }
+    }
+}));
 
 // ============================================
 // ERROR HANDLING

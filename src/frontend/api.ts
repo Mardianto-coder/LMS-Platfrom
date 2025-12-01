@@ -654,19 +654,24 @@ export async function getStudentCourses(studentId: number): Promise<Course[]> {
  */
 export async function getStudentAssignments(studentId: number): Promise<Assignment[]> {
     try {
+        console.log('[API] getStudentAssignments: Fetching assignments for studentId:', studentId);
         const response = await fetch(`${API_BASE}/students/${studentId}/assignments`, {
             headers: getAuthHeaders()
         });
 
         const data = await response.json();
+        console.log('[API] getStudentAssignments: Response data:', data);
 
         if (!response.ok) {
+            console.error('[API] getStudentAssignments: Error response:', data);
             throw new Error(data.message || 'Failed to fetch assignments');
         }
 
-        return data.assignments || [];
+        const assignments = data.assignments || [];
+        console.log('[API] getStudentAssignments: Returning assignments:', assignments.length, assignments);
+        return assignments;
     } catch (error) {
-        console.error('Error loading assignments:', error);
+        console.error('[API] Error loading assignments:', error);
         throw error;
     }
 }
@@ -787,6 +792,75 @@ export async function getAssignmentById(
         return data.assignment;
     } catch (error) {
         console.error('Error loading assignment:', error);
+        throw error;
+    }
+}
+
+/**
+ * Mendapatkan semua assignments (Admin only)
+ * 
+ * @returns Promise<Assignment[]> - Array of all assignments
+ * 
+ * @example
+ * ```typescript
+ * const allAssignments = await getAllAssignments();
+ * console.log('All assignments:', allAssignments);
+ * ```
+ */
+export async function getAllAssignments(): Promise<Assignment[]> {
+    try {
+        const response = await fetch(`${API_BASE}/assignments`, {
+            headers: getAuthHeaders()
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.message || 'Failed to fetch assignments');
+        }
+
+        return data.assignments || [];
+    } catch (error) {
+        console.error('Error loading all assignments:', error);
+        throw error;
+    }
+}
+
+/**
+ * Grade assignment (Admin only)
+ * 
+ * @param assignmentId - ID assignment yang akan di-grade
+ * @param score - Score dari 0-100
+ * @param feedback - Feedback untuk student (optional)
+ * @returns Promise<Assignment> - Assignment object yang sudah di-grade
+ * 
+ * @example
+ * ```typescript
+ * const graded = await gradeAssignment(1, 85, 'Good work!');
+ * console.log('Graded assignment:', graded);
+ * ```
+ */
+export async function gradeAssignment(
+    assignmentId: number,
+    score: number,
+    feedback?: string
+): Promise<Assignment> {
+    try {
+        const response = await fetch(`${API_BASE}/assignments/${assignmentId}/grade`, {
+            method: 'PUT',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ score, feedback: feedback || '' })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.message || 'Failed to grade assignment');
+        }
+
+        return data.assignment;
+    } catch (error) {
+        console.error('Error grading assignment:', error);
         throw error;
     }
 }

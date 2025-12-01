@@ -30,3 +30,39 @@
     </div>
 </div>
 
+<!-- Grading Modal (Admin only) -->
+<div id="gradingModal" class="modal">
+    <div class="modal-content">
+        <span class="close">&times;</span>
+        <h2>Grade Assignment</h2>
+        <form id="gradingForm">
+            <input type="hidden" id="gradingAssignmentId">
+            <div class="form-group">
+                <label><strong>Student:</strong></label>
+                <div id="gradingStudentInfo" style="padding: 0.5rem; background-color: #f8f9fa; border-radius: 4px; margin-bottom: 1rem;"></div>
+            </div>
+            <div class="form-group">
+                <label><strong>Course:</strong></label>
+                <div id="gradingCourseInfo" style="padding: 0.5rem; background-color: #f8f9fa; border-radius: 4px; margin-bottom: 1rem;"></div>
+            </div>
+            <div class="form-group">
+                <label><strong>Assignment Title:</strong></label>
+                <div id="gradingAssignmentTitle" style="padding: 0.5rem; background-color: #f8f9fa; border-radius: 4px; margin-bottom: 1rem; font-weight: 600;"></div>
+            </div>
+            <div class="form-group">
+                <label><strong>Submission Content:</strong></label>
+                <div id="gradingAssignmentContent" style="padding: 0.75rem; background-color: #f8f9fa; border-radius: 4px; margin-bottom: 1rem; max-height: 200px; overflow-y: auto; white-space: pre-wrap;"></div>
+            </div>
+            <div class="form-group">
+                <label>Score (0-100) <span style="color: red;">*</span></label>
+                <input type="number" id="gradingScore" min="0" max="100" required>
+            </div>
+            <div class="form-group">
+                <label>Feedback (Optional)</label>
+                <textarea id="gradingFeedback" rows="4" placeholder="Provide feedback to the student..."></textarea>
+            </div>
+            <button type="submit" class="btn btn-primary" id="submitGradingBtn">Submit Grade</button>
+        </form>
+    </div>
+</div>
+
