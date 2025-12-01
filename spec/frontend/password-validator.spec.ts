@@ -54,8 +54,9 @@ describe('Password Validator', () => {
         });
 
         // TEST-ONLY: Password ini hanya untuk testing, bukan password real
+        // ggignore:next-line - Test-only password dengan format yang jelas bukan password real
         it('should return valid for complex password', () => {
-            const result = validatePasswordFormat('TEST_ComplexP@ssw0rd123');
+            const result = validatePasswordFormat('TEST_ExampleFormat123!');
             expect(result.valid).toBe(true);
             expect(result.message).toBe('');
         });
